@@ -6,10 +6,8 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 from sklearn.cluster import KMeans
 from sklearn.linear_model import LinearRegression
+import pdb
 
-
-def t_norm_product(m1,m2):
-    return m1*m2
 
 class MfTrap():
 
@@ -71,7 +69,6 @@ class TKSConsequence():
 
         return cur_sum
 
-
 class TSKAntecedent():
     def __init__(self, fuzzy_sets_indexes : []):
         self.fuzzy_sets_indexes : [] = fuzzy_sets_indexes
@@ -97,26 +94,31 @@ class TSKRule():
     def calculate_consequence_func(self, x_list):
         return self.consequent.calculate_consequence(x_list, self.feature_indexes[:, 0])
     
-    def to_string(self, fuzzy_sets) -> str:
+    def to_string(self, fuzzy_sets, expressions) -> str:
         antecedent_str = ""
         for i, feature in enumerate(self.feature_indexes):
-            antecedent_str += "x" + str(feature[0]) + " in " + fuzzy_sets[feature[0]][feature[1]].name
+            antecedent_str += f"{expressions[feature[0]]} in " + fuzzy_sets[feature[0]][feature[1]].name
             if i < (len(self.feature_indexes)-1):
                 antecedent_str += " and "
 
         consequent_str = "y = "
         for i, feature in enumerate(self.feature_indexes[:,0]):
-            consequent_str += "x" + str(feature) + "*p" + str(feature)
+            consequent_str += f"{expressions[feature]} * {self.consequent.params_list[feature]:.2f}"
             if i < (len(self.feature_indexes)-1):
                 consequent_str += " + "
 
-        return f"IF {antecedent_str} THEN {consequent_str} + r"
+        return f"IF {antecedent_str} THEN {consequent_str} + {self.consequent.const:.2f}"
     
-
 class TSKRuleBase():
-    def __init__(self, feature_names : [str]):
+    def __init__(self, feature_names : [str], expressions : {str:str}):
         self.rules : [TSKRule] = []
         self.feature_names = feature_names
+        self.expressions = []
+        for i, feature in enumerate(self.feature_names):
+            if feature in expressions:
+                self.expressions.append(expressions[feature])
+            else:
+                self.expressions.append("x"+str(i))
 
     def appendRule(self, new_rule : TSKRule):
         self.rules.append(new_rule)
@@ -126,7 +128,7 @@ class TSKRuleBase():
     
     def print_rulebase(self, fuzzy_sets):
         for rule in self.rules:
-            print(rule.to_string(fuzzy_sets))
+            print(rule.to_string(fuzzy_sets, self.expressions))
         
     def write_to_csv(self):
         """This method writes the rule base to csv
@@ -141,11 +143,13 @@ class TSKRuleBase():
         self.rulebase_df.to_csv()
 
 
-    
 class TSKModel():
 
     def __init__(self):
-        self._feature_fuzzy_sets = []
+        self._feature_fuzzy_sets = [MfTrap]
+        self.test_actuals = []
+        self.r_squared = None
+        self.test_data = None
         
     
     def randomize_model(self, n_fuzzy_sets : int, n_fuzzy_rules : int, feature_boudaries : {}, feature_names : [], max_expressions : int=2):
@@ -201,21 +205,39 @@ class TSKModel():
             
             self.rulebase.appendRule(TSKRule(np.array(cur_MF_list), params, 1))
 
-    def calculate_output(self, x_list):
+    def calculate_output(self, x_list, activate_debug=False):
+        """This method is used to apply the trained model on some input values.
+
+        Parameters
+        ----------
+        x_list : [int]
+            A list of one value for each input variable x
+
+        Returns
+        -------
+        float
+            The predicted value
+        """
         a_out = 0
         w_total = 0
         rule : TSKRule = None
+
         for rule in self.rulebase.rules:
             # Calculate the total firing strenght for normalization
-            w_total += rule.antecedent.calculate_firing_strenght(x_list, self._feature_fuzzy_sets)
+            cur_firing_strenght = rule.antecedent.calculate_firing_strenght(x_list, self._feature_fuzzy_sets)
+            w_total += cur_firing_strenght
         if w_total == 0:
             # The output is 0 if there is no firing strength
-            print(x_list)
+            #print(x_list)
             return 0
         
-        for rule in self.rulebase.rules:
+        for i, rule in enumerate(self.rulebase.rules):
             cur_firing_strenght = rule.antecedent.get_firing_strenght()
-            a_out += (cur_firing_strenght / w_total)*rule.calculate_consequence_func(x_list)
+            cur_consequent_value = rule.calculate_consequence_func(x_list)
+            if activate_debug:
+                # Print out the rule calculation results for transparency
+                print(f"Rule {i}: \t Firing strength: {cur_firing_strenght}, Consequent value: {cur_consequent_value}")
+            a_out += (cur_firing_strenght / w_total)*cur_consequent_value
 
         return a_out
         
@@ -229,7 +251,6 @@ class TSKModel():
         self.rulebase = rulebase
         self.rulebase.print_rulebase(self._feature_fuzzy_sets)
         
-
     def set_feature_fuzzy_sets(self, feature_fuzzy_sets : [FeatureFuzzySets]):
         # Check that there are enough sets
         if len(feature_fuzzy_sets) != len(self.feature_names):
@@ -242,7 +263,9 @@ class TSKModel():
     def create_rulebase_kmeans(self, 
                                train_data : pd.DataFrame, 
                                n_fuzzy_sets : int=3, 
-                               inner_bound_factor : float=0.3) -> None:
+                               n_rules : int=10,
+                               inner_bound_factor : float=0.3, 
+                               expressions={}) -> None:
         """This method derives the TSK rulebase by performing K-Means clustering and Multi-Linear Regression. 
 
 
@@ -255,12 +278,26 @@ class TSKModel():
         inner_bound_factor : int, optional
             Factor for setting the core of the trapezoidals. center +/- outer_bound_factor*std, by default 1
         """
-        X = train_data.to_numpy()
-        cluster_obj = KMeans(n_clusters=10, n_init=10)
-        cluster_fit = cluster_obj.fit(X)
-        merged_data = pd.merge(train_data.iloc[:, 1:], pd.DataFrame({"Subcluster_number" : cluster_fit.labels_}), left_index=True, right_index=True)
+        # Verify that there are enough features in dataframe (feature 1 is the target/dependent variable)
+        if len(train_data.columns) < 2:
+            raise Exception("The provided input data does not have a valid dimention: dimention < 2")
+
+        # Verfiy the given number of fuzzy sets
+        if n_fuzzy_sets < 1:
+            raise Exception(f"Cannot create model with a number of fuzzy sets of {n_fuzzy_sets} for each input.")
+
         self.n_fuzzy_sets = n_fuzzy_sets
+
+        X = train_data.to_numpy()
+        cluster_obj = KMeans(n_clusters=n_rules, n_init=10)
+        cluster_fit = cluster_obj.fit(X)
+        # Add a feature at the end of the dataframe, containing the cluster labels
+        merged_data = pd.merge(train_data, pd.DataFrame({"Subcluster_number" : cluster_fit.labels_}), left_index=True, right_index=True)
+        self.merged_dataset = merged_data
+        # Resulting dataframe has target in first column, independent features in the middle and the cluster labels in the last colummn
+        # Extract the featurenames by ignoring the first and last column
         self.feature_names = merged_data.columns[1:-1]
+        # Extract the target name
         self.target_name = merged_data.columns[0]
         self.max_expressions = len(self.feature_names)
         # Consequences are calculated
@@ -288,14 +325,19 @@ class TSKModel():
         # Initialization of the rule list dict
         clusters : {} = {i : [] for i in np.unique(cluster_fit.labels_)}
 
-        for k in range(1, len(merged_data.iloc[:, 1:-1].columns)+1):
+        for k in range(1, len(merged_data.columns)-1):
+            # Iterate over all features (independent variables), starts at 1 because first column is not an independent variable
+
+            # Get the cluster centers of the subclusters
             raw_mfs = cluster_fit.cluster_centers_[:,k].reshape(-1, 1)
             # Reduce amount of mfs by clustering in one dimension
             reduced_mfs_middle = KMeans(n_clusters=n_fuzzy_sets, n_init=5).fit(raw_mfs)
+
             # Storing cluster centers of the current feature
             cluster_center.append(reduced_mfs_middle.cluster_centers_.ravel())
             subcluster_in_clusters = [[] for i in np.unique(reduced_mfs_middle.labels_)]
             for subcluster_number in range(len(raw_mfs)):
+                # Iterate ower the raw_mfs (rule clusters)
                 cur_cluster_number = reduced_mfs_middle.labels_[subcluster_number]
                 # Add the feature set to the rule list dictionary
                 clusters[subcluster_number].append(cur_cluster_number)
@@ -313,7 +355,7 @@ class TSKModel():
                                       cur_center - cur_std*inner_bound_factor, 
                                       cur_center + cur_std*inner_bound_factor, 
                                       cur_center + (abs(cur_center - cur_max)), 
-                                      ""))
+                                      f"{merged_data.columns[k]}_{cluster}"))
 
             # Add the feature collection of sets
             mfs.append(FeatureFuzzySets(cur_mfs, merged_data.columns[k]))
@@ -321,18 +363,63 @@ class TSKModel():
         self.set_feature_fuzzy_sets(mfs)
 
         self.n_fuzzy_rules = len(clusters.keys())
-        new_rulebase = TSKRuleBase(self.feature_names)
+        new_rulebase = TSKRuleBase(self.feature_names, expressions)
         # Create rulebase
         for rule_num, rule in clusters.items():
-            new_rulebase.appendRule(TSKRule(np.array([np.arange(len(rule)), rule]).transpose(), 
+            # Creating a matrix containing the mapping between antecedent place and the fuzzy set index
+            cur_index_matrix = np.array([np.arange(len(rule)), rule]).transpose()
+            # Defining the rule
+            new_rulebase.appendRule(TSKRule(cur_index_matrix, 
                                     consequent_params[rule_num], 
                                     intercepts[rule_num])
                                     )
         # Add the rulebase 
         self.set_rulebase(new_rulebase)
 
+    def test_model(self, test_data):
+        # Calculate the output values
+        self.test_data = test_data
+        cur_actuals = np.empty(test_data.shape[0])
+        for i, x_vals in test_data.iloc[:, 1:].iterrows():
+            cur_actuals[i] = self.calculate_output(x_vals.to_numpy())
 
+        self.test_actuals = cur_actuals
 
+    def calculate_r_squared(self, test_data=None):
+        # This method calculates the r-squared: 1 - RSS/TSS
+        self.r_squared = 0
+        if len(self.test_actuals) == 0 and test_data:
+            # If the actuals have not been calculated, apply the 
+            self.test_model(test_data)
+        elif len(self.test_actuals) == 0:
+            raise Exception("No test data is available, please provide test data!")
+
+        # Total sum of squares (denominator)
+        y = self.test_data.iloc[:, 0].to_numpy()
+        y_mean = np.mean(self.test_actuals)
+        tss = np.sum((y - y_mean)**2)
+        rss = np.sum((y - self.test_actuals)**2)
+
+        self.r_squared = 1 - (rss/tss)
+        return self.r_squared
+    
+    def calculate_rmse(self, test_data=None):
+        # This method calculates the r-squared: 1 - RSS/TSS
+        self.rmse = 0
+        if len(self.test_actuals) == 0 and test_data:
+            # If the actuals have not been calculated, apply the 
+            self.test_model(test_data)
+        elif len(self.test_actuals) == 0:
+            raise Exception("No test data is available, please provide test data!")
+
+        # Total sum of squares (denominator)
+        y = self.test_data.iloc[:, 0].to_numpy()
+        
+        rmse = np.sqrt(np.sum((y - self.test_actuals)**2))
+
+        self.rmse = rmse
+        return self.rmse
+        
     def show_fuzzy_sets(self):
         """This method is used to plot the fuzzy sets for each feature"""
         fig, axes = plt.subplots(len(self.feature_names), 1, figsize=(10, 10))
@@ -361,7 +448,9 @@ class TSKModel():
                 for param in cur_param_list:
                     deg_list.append(cur_set.get_membership_degree(param))
                 
-                axes[id].plot(cur_param_list, deg_list)
+                axes[id].plot(cur_param_list, deg_list, label=cur_set.name)
+
+            axes[id].legend()
                 
         plt.show()
 
