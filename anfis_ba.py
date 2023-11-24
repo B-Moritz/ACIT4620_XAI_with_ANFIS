@@ -37,6 +37,12 @@ class MfTrap():
         
     def get_param_list(self):
         return [self.a, self.b, self.c, self.d]
+
+    def set_param_list(self, param_list):
+        self.a = param_list[0]
+        self.b = param_list[1]
+        self.c = param_list[2]
+        self.d = param_list[3]
         
 class FeatureFuzzySets():
     "This object represents all input features and their fuzzy sets" 
@@ -145,14 +151,22 @@ class TSKRuleBase():
 
 class TSKModel():
 
-    def __init__(self):
+    def __init__(self, debug:bool = False):
         self._feature_fuzzy_sets = [MfTrap]
         self.test_actuals = []
         self.r_squared = None
         self.test_data = None
+        self.debug = debug
+        self.generation = 0
         
     
-    def randomize_model(self, n_fuzzy_sets : int, n_fuzzy_rules : int, feature_boudaries : {}, feature_names : [], max_expressions : int=2):
+    def randomize_model(self, 
+                        n_fuzzy_sets : int, 
+                        n_fuzzy_rules : int, 
+                        feature_boudaries : {}, 
+                        feature_names : [], 
+                        max_expressions : int=2):
+        
         if n_fuzzy_sets < 2:
             # Too few fuzzy sets
             raise Exception(f"Too few fuzzy sets: n_fuzzy_sets < {2}")
@@ -177,13 +191,13 @@ class TSKModel():
                 if set_num == 0:
                     # Make sure the first set is defined to -infinity
                     cur_params = np.sort(np.random.uniform(boundaries[0] + portion_size*(set_num - overlap_const), boundaries[0] + portion_size*(set_num + 1 + overlap_const), size=2))
-                    cur_feature_sets.append(MfTrap(-np.infty,-np.infty,cur_params[0],cur_params[1], f"{self.feature_names[feature_number]}{set_num}"))
+                    cur_feature_sets.append(MfTrap(-np.infty,-np.infty,cur_params[0],cur_params[1], f"{self.feature_names[feature_number]}{set_num}", ""))
                 elif set_num == (self.n_fuzzy_sets-1):
                     cur_params = np.sort(np.random.uniform(boundaries[0] + portion_size*(set_num - overlap_const), boundaries[0] + portion_size*(set_num + 1 + overlap_const), size=2))
-                    cur_feature_sets.append(MfTrap(cur_params[0],cur_params[1], np.infty, np.infty, f"{self.feature_names[feature_number]}{set_num}"))
+                    cur_feature_sets.append(MfTrap(cur_params[0],cur_params[1], np.infty, np.infty, f"{self.feature_names[feature_number]}{set_num}", ""))
                 else:
                     cur_params = np.sort(np.random.uniform(boundaries[0] + portion_size*(set_num - overlap_const), boundaries[0] + portion_size*(set_num + 1 + overlap_const), size=4))
-                    cur_feature_sets.append(MfTrap(cur_params[0],cur_params[1],cur_params[2],cur_params[3], f"{self.feature_names[feature_number]}{set_num}"))
+                    cur_feature_sets.append(MfTrap(cur_params[0],cur_params[1],cur_params[2],cur_params[3], f"{self.feature_names[feature_number]}{set_num}", ""))
 
             # Add the sets to the input feature
             self._feature_fuzzy_sets.append(FeatureFuzzySets(cur_feature_sets, self.feature_names[feature_number]))
@@ -249,7 +263,8 @@ class TSKModel():
             raise Exception("The number of expressions per rules are too high.")
         
         self.rulebase = rulebase
-        self.rulebase.print_rulebase(self._feature_fuzzy_sets)
+        if self.debug:
+            self.rulebase.print_rulebase(self._feature_fuzzy_sets)
         
     def set_feature_fuzzy_sets(self, feature_fuzzy_sets : [FeatureFuzzySets]):
         # Check that there are enough sets
@@ -351,11 +366,11 @@ class TSKModel():
                 cur_min = merged_data[merged_data["Subcluster_number"].isin(np.unique(subclusters))].iloc[:, k].min()
                 cur_max = merged_data[merged_data["Subcluster_number"].isin(np.unique(subclusters))].iloc[:, k].max()
                 cur_center = cluster_center[k-1][cluster]
-                cur_mfs.append(MfTrap(cur_center - (abs(cur_center - cur_min)), 
-                                      cur_center - cur_std*inner_bound_factor, 
-                                      cur_center + cur_std*inner_bound_factor, 
-                                      cur_center + (abs(cur_center - cur_max)), 
-                                      f"{merged_data.columns[k]}_{cluster}"))
+                cur_mfs.append(MfTrap(cur_center - (abs(cur_center - cur_min)),
+                                      cur_center - cur_std*inner_bound_factor,
+                                      cur_center + cur_std*inner_bound_factor,
+                                      cur_center + (abs(cur_center - cur_max)),
+                                      f"{merged_data.columns[k]}_{cluster}", ))
 
             # Add the feature collection of sets
             mfs.append(FeatureFuzzySets(cur_mfs, merged_data.columns[k]))
@@ -388,7 +403,7 @@ class TSKModel():
     def calculate_r_squared(self, test_data=None):
         # This method calculates the r-squared: 1 - RSS/TSS
         self.r_squared = 0
-        if len(self.test_actuals) == 0 and test_data:
+        if len(self.test_actuals) == 0 and len(test_data) > 0:
             # If the actuals have not been calculated, apply the 
             self.test_model(test_data)
         elif len(self.test_actuals) == 0:
@@ -403,10 +418,10 @@ class TSKModel():
         self.r_squared = 1 - (rss/tss)
         return self.r_squared
     
-    def calculate_rmse(self, test_data=None):
+    def calculate_rmse(self, test_data=pd.DataFrame()):
         # This method calculates the r-squared: 1 - RSS/TSS
         self.rmse = 0
-        if len(self.test_actuals) == 0 and test_data:
+        if len(self.test_actuals) == 0 and len(test_data) > 0:
             # If the actuals have not been calculated, apply the 
             self.test_model(test_data)
         elif len(self.test_actuals) == 0:
@@ -419,6 +434,12 @@ class TSKModel():
 
         self.rmse = rmse
         return self.rmse
+    
+    def increment_training_counter(self):
+        self.generation += 1
+
+    def get_training_counter(self):
+        return self.generation
         
     def show_fuzzy_sets(self):
         """This method is used to plot the fuzzy sets for each feature"""
