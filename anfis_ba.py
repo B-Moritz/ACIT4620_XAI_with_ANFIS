@@ -17,7 +17,17 @@ class MfTrap():
         self.c = c
         self.d = d
         self.name = name
+        self.validate_set()
 
+    def validate_set(self):
+        if self.a > self.b:
+            print("a:" + str(self.a) + ", b:" + str(self.b))
+            raise Exception("Parameter a is larger than b.")
+        if self.b > self.c:
+            raise Exception("Parameter b is larger than c.")
+        if self.b > self.c:
+            raise Exception("Parameter c is larger than d.")
+        
     def get_membership_degree(self, x):
         if self.a == -np.infty and x < self.c:
             return 1
@@ -27,10 +37,14 @@ class MfTrap():
         if x < self.a:
             return 0
         elif x < self.b:
+            if self.b - self.a == 0:
+                return 0
             return (x-self.a)/(self.b-self.a)
         elif x < self.c:
             return 1
         elif x <= self.d:
+            if self.d - self.c == 0:
+                return 1
             return (self.d - x)/(self.d - self.c)
         else:
             return 0
@@ -43,6 +57,7 @@ class MfTrap():
         self.b = param_list[1]
         self.c = param_list[2]
         self.d = param_list[3]
+        self.validate_set()
         
 class FeatureFuzzySets():
     "This object represents all input features and their fuzzy sets" 
@@ -109,11 +124,11 @@ class TSKRule():
 
         consequent_str = "y = "
         for i, feature in enumerate(self.feature_indexes[:,0]):
-            consequent_str += f"{expressions[feature]} * {self.consequent.params_list[feature]:.2f}"
+            consequent_str += f"{expressions[feature]} * {self.consequent.params_list[feature]:.4f}"
             if i < (len(self.feature_indexes)-1):
                 consequent_str += " + "
 
-        return f"IF {antecedent_str} THEN {consequent_str} + {self.consequent.const:.2f}"
+        return f"IF {antecedent_str} THEN {consequent_str} + {self.consequent.const:.4f}"
     
 class TSKRuleBase():
     def __init__(self, feature_names : [str], expressions : {str:str}):
@@ -275,11 +290,11 @@ class TSKModel():
         
         self._feature_fuzzy_sets = feature_fuzzy_sets
 
-    def create_rulebase_kmeans(self, 
+    def create_rulebase_kmeans_advanced(self,
                                train_data : pd.DataFrame, 
                                n_fuzzy_sets : int=3, 
                                n_rules : int=10,
-                               inner_bound_factor : float=0.3, 
+                               trap_quantile : float=0.4, 
                                expressions={}) -> None:
         """This method derives the TSK rulebase by performing K-Means clustering and Multi-Linear Regression. 
 
@@ -315,24 +330,9 @@ class TSKModel():
         # Extract the target name
         self.target_name = merged_data.columns[0]
         self.max_expressions = len(self.feature_names)
-        # Consequences are calculated
-        subclusters = merged_data["Subcluster_number"].unique()
-        r2_scores : [float] = []
-        consequent_params : [float] = []
-        intercepts : [float] = []
-        for subcluster in subclusters:
-            cur_X = merged_data[merged_data["Subcluster_number"] == subcluster].iloc[:, 1:-1]
-            cur_Y = merged_data[merged_data["Subcluster_number"] == subcluster].iloc[:, 0]
-            # Make the fit
-            cur_linear = LinearRegression().fit(cur_X, cur_Y)
-            # Store coefficients
-            consequent_params.append(cur_linear.coef_)
-            # Store the constant
-            intercepts.append(cur_linear.intercept_)
-            # Store the r2 score of the fit
-            r2_scores.append(cur_linear.score(cur_X, cur_Y))
 
-        self.r2_scores = r2_scores
+        # Extracting all unique subclusters/rules
+        subclusters = merged_data["Subcluster_number"].unique()
 
         # Derive the membership functions from the clusters (trapeziums)
         cluster_center : [float] = []
@@ -342,40 +342,96 @@ class TSKModel():
 
         for k in range(1, len(merged_data.columns)-1):
             # Iterate over all features (independent variables), starts at 1 because first column is not an independent variable
+            # k - feature index (column index)
 
-            # Get the cluster centers of the subclusters
+            # Get the cluster centers of the subclusters. Note that the cluster_fit.cluster_centers_ matrix has cluster on axis 0 and feature cluster center along axis 1
             raw_mfs = cluster_fit.cluster_centers_[:,k].reshape(-1, 1)
             # Reduce amount of mfs by clustering in one dimension
             reduced_mfs_middle = KMeans(n_clusters=n_fuzzy_sets, n_init=5).fit(raw_mfs)
 
             # Storing cluster centers of the current feature
-            cluster_center.append(reduced_mfs_middle.cluster_centers_.ravel())
+            cluster_center.append(np.sort(reduced_mfs_middle.cluster_centers_.ravel()))
+            # Preparing list for mapping what rules each set is used in (index is set number, values are lists with rule index)
             subcluster_in_clusters = [[] for i in np.unique(reduced_mfs_middle.labels_)]
             for subcluster_number in range(len(raw_mfs)):
                 # Iterate ower the raw_mfs (rule clusters)
                 cur_cluster_number = reduced_mfs_middle.labels_[subcluster_number]
-                # Add the feature set to the rule list dictionary
+                # Add the feature set to the rule list dictionary. 
+                # Note how this is reapeated for each feature in the outer loop and in this loop the current feature is added to all rules
                 clusters[subcluster_number].append(cur_cluster_number)
                 # Keep list of which subcluster are in the root clusters for the feature
                 subcluster_in_clusters[cur_cluster_number].append(subcluster_number)
-            
+
+            # Preparing the mfs list            
             cur_mfs = []
             for cluster, subclusters in enumerate(subcluster_in_clusters):
-                # For each cluster in subcluster calculate std for current feature
-                cur_std = merged_data[merged_data["Subcluster_number"].isin(np.unique(subclusters))].iloc[:, k].std()
+                # For each set derived for this feature, create the fuzzy trapezodial by calculating the quantile
+                cur_mean = merged_data[merged_data["Subcluster_number"].isin(np.unique(subclusters))].iloc[:, k].mean()
+                cur_quantile_val = merged_data[merged_data["Subcluster_number"].isin(np.unique(subclusters))].iloc[:, k].quantile(trap_quantile)
+                dis_from_center = abs(cur_mean - cur_quantile_val)
                 cur_min = merged_data[merged_data["Subcluster_number"].isin(np.unique(subclusters))].iloc[:, k].min()
                 cur_max = merged_data[merged_data["Subcluster_number"].isin(np.unique(subclusters))].iloc[:, k].max()
                 cur_center = cluster_center[k-1][cluster]
-                cur_mfs.append(MfTrap(cur_center - (abs(cur_center - cur_min)),
-                                      cur_center - cur_std*inner_bound_factor,
-                                      cur_center + cur_std*inner_bound_factor,
-                                      cur_center + (abs(cur_center - cur_max)),
-                                      f"{merged_data.columns[k]}_{cluster}", ))
+                cur_mfs.append(MfTrap(cur_center - (abs(cur_mean - cur_min)),
+                                      cur_center - dis_from_center,
+                                      cur_center + dis_from_center,
+                                      cur_center + (abs(cur_mean - cur_max)),
+                                      f"{merged_data.columns[k]}_{cluster}"))
 
             # Add the feature collection of sets
             mfs.append(FeatureFuzzySets(cur_mfs, merged_data.columns[k]))
         # Add the fuzzy sets to model
         self.set_feature_fuzzy_sets(mfs)
+
+        
+        consequent_train_data = []
+        
+        antecedents = []
+        for rule_num, rule in clusters.items():
+            cur_index_matrix = np.array([np.arange(len(rule)), rule]).transpose()
+            antecedents.append(TSKAntecedent(cur_index_matrix))
+        # Create the dataset to fit the consequents with least squeare method
+        for row in range(merged_data.shape[0]):
+            cur_x_row = merged_data.iloc[row, 1:-1].to_numpy()
+            cur_row_expanded = np.array([])
+            w_total = 0
+            cur_w_list = []
+            # Find firing strength for each rule
+            for rule in antecedents:
+                rule_w = rule.calculate_firing_strenght(cur_x_row, self._feature_fuzzy_sets)
+                w_total += rule_w
+                cur_w_list.append(float(rule_w))
+
+            if w_total == 0:
+                w_total = 1
+
+            for w in cur_w_list:
+                cur_firing_normalized = w/w_total
+                if len(cur_row_expanded) == 0:
+                    cur_row_expanded = np.concatenate(((cur_x_row*cur_firing_normalized), np.array([cur_firing_normalized])), dtype=float)
+                else:
+                    cur_row_expanded = np.concatenate((cur_row_expanded, (cur_x_row*cur_firing_normalized), np.array([cur_firing_normalized])), dtype=float)
+            
+            consequent_train_data.append(cur_row_expanded)
+                
+        cur_Y = merged_data.iloc[:, 0].to_numpy()
+        cur_X = consequent_train_data
+        # Estimate the consequence parameters
+        linear_estimate = LinearRegression(fit_intercept=False, copy_X=True).fit(cur_X, cur_Y)
+        self.r2_scores = linear_estimate.score(cur_X, cur_Y)
+        # Extract the parameters
+        self.extracted_params = linear_estimate.coef_
+        # The next lines partition the parameters into the rules. Each rule has parameters and one intercept which is the last parameter (1 + the last index of the rule)
+        rule_params = [[] for i in range(len(clusters.keys()))]
+        rule_intercepts = np.empty(len(clusters.keys()), dtype=float)
+        param_counter = 0
+        for rule_num, rule in clusters.items():
+            # For each rule iterate over all features in rule variable
+            for param_nr in range(len(rule)):
+                rule_params[rule_num].append(self.extracted_params[param_counter + param_nr])
+
+            rule_intercepts[rule_num] = self.extracted_params[param_counter + len(rule)]
+            param_counter += len(rule) + 1
 
         self.n_fuzzy_rules = len(clusters.keys())
         new_rulebase = TSKRuleBase(self.feature_names, expressions)
@@ -385,11 +441,163 @@ class TSKModel():
             cur_index_matrix = np.array([np.arange(len(rule)), rule]).transpose()
             # Defining the rule
             new_rulebase.appendRule(TSKRule(cur_index_matrix, 
-                                    consequent_params[rule_num], 
-                                    intercepts[rule_num])
+                                    rule_params[rule_num], 
+                                    rule_intercepts[rule_num])
                                     )
         # Add the rulebase 
         self.set_rulebase(new_rulebase)
+
+    def create_rulebase_kmeans(self,
+                               train_data : pd.DataFrame, 
+                               n_fuzzy_sets : int=3, 
+                               trap_quantile : float=0.4, 
+                               expressions={}) -> None:
+        """This method derives the TSK rulebase by performing K-Means clustering and Multi-Linear Regression. 
+
+
+        Parameters
+        ----------
+        train_data : pandas.DataFrame
+            The training data. Dependent variable is column 1 (index 0). Independent features follow
+        n_fuzzy_sets : int, optional
+            Number of fuzzy sets per independent feature, by default 3
+        inner_bound_factor : int, optional
+            Factor for setting the core of the trapezoidals. center +/- outer_bound_factor*std, by default 1
+        """
+        # Verify that there are enough features in dataframe (feature 1 is the target/dependent variable)
+        if len(train_data.columns) < 2:
+            raise Exception("The provided input data does not have a valid dimention: dimention < 2")
+
+        # Verfiy the given number of fuzzy sets
+        if n_fuzzy_sets < 1:
+            raise Exception(f"Cannot create model with a number of fuzzy sets of {n_fuzzy_sets} for each input.")
+
+        self.n_fuzzy_sets = n_fuzzy_sets
+
+        X = train_data.to_numpy()
+        cluster_obj = KMeans(n_clusters=n_fuzzy_sets, n_init=10)
+        cluster_fit = cluster_obj.fit(X)
+        # Add a feature at the end of the dataframe, containing the cluster labels
+        merged_data = pd.merge(train_data, pd.DataFrame({"Subcluster_number" : cluster_fit.labels_}), left_index=True, right_index=True)
+        self.merged_dataset = merged_data
+        # Resulting dataframe has target in first column, independent features in the middle and the cluster labels in the last colummn
+        # Extract the featurenames by ignoring the first and last column
+        self.feature_names = merged_data.columns[1:-1]
+        # Extract the target name
+        self.target_name = merged_data.columns[0]
+        self.max_expressions = len(self.feature_names)
+
+        # Extracting all unique subclusters/rules
+        unique_clusters = merged_data["Subcluster_number"].unique()
+
+        # Derive the membership functions from the clusters (trapeziums)
+        cluster_center : [float] = []
+        mfs : [FeatureFuzzySets] = []
+        # Initialization of the rule list dict
+        clusters : {} = {i : [] for i in np.unique(cluster_fit.labels_)}
+
+        for k in range(1, len(merged_data.columns)-1):
+            # Iterate over all features (independent variables), starts at 1 because first column is not an independent variable
+            # k - feature index (column index)
+
+            # Get the cluster centers of the subclusters. Note that the cluster_fit.cluster_centers_ matrix has cluster on axis 0 and feature cluster center along axis 1
+            raw_mfs = cluster_fit.cluster_centers_[:,k]
+            
+            # Preparing list for mapping what rules each set is used in (index is set number, values are lists with rule index)
+            subcluster_in_clusters = [[] for i in range(len(raw_mfs))]
+            for subcluster_number in range(len(raw_mfs)):
+                # Iterate ower the raw_mfs (rule clusters)
+                # Add the feature set to the rule list dictionary. 
+                # Note how this is reapeated for each feature in the outer loop and in this loop the current feature is added to all rules
+                clusters[subcluster_number].append(subcluster_number)
+                # Keep list of which subcluster are in the root clusters for the feature
+                subcluster_in_clusters[subcluster_number].append(subcluster_number)
+
+            # Preparing the mfs list            
+            cur_mfs = []
+            for cluster, subclusters in enumerate(subcluster_in_clusters):
+                # For each set derived for this feature, create the fuzzy trapezodial by calculating the quantile
+                cur_mean = merged_data[merged_data["Subcluster_number"].isin(np.unique(subclusters))].iloc[:, k].mean()
+                cur_quantile_val = merged_data[merged_data["Subcluster_number"].isin(np.unique(subclusters))].iloc[:, k].quantile(trap_quantile)
+                dis_from_center = abs(cur_mean - cur_quantile_val)
+                cur_min = merged_data[merged_data["Subcluster_number"].isin(np.unique(subclusters))].iloc[:, k].min()
+                cur_max = merged_data[merged_data["Subcluster_number"].isin(np.unique(subclusters))].iloc[:, k].max()
+                cur_center = raw_mfs[cluster]
+                cur_mfs.append(MfTrap(cur_center - (abs(cur_mean - cur_min)),
+                                      cur_center - dis_from_center,
+                                      cur_center + dis_from_center,
+                                      cur_center + (abs(cur_mean - cur_max)),
+                                      f"{merged_data.columns[k]}_{cluster}"))
+
+            # Add the feature collection of sets
+            mfs.append(FeatureFuzzySets(cur_mfs, merged_data.columns[k]))
+        # Add the fuzzy sets to model
+        self.set_feature_fuzzy_sets(mfs)
+
+        
+        consequent_train_data = []
+        
+        antecedents = []
+        for rule_num, rule in clusters.items():
+            cur_index_matrix = np.array([np.arange(len(rule)), rule]).transpose()
+            antecedents.append(TSKAntecedent(cur_index_matrix))
+        # Create the dataset to fit the consequents with least squeare method
+        for row in range(merged_data.shape[0]):
+            cur_x_row = merged_data.iloc[row, 1:-1].to_numpy()
+            cur_row_expanded = np.array([])
+            w_total = 0
+            cur_w_list = []
+            # Find firing strength for each rule
+            for rule in antecedents:
+                rule_w = rule.calculate_firing_strenght(cur_x_row, self._feature_fuzzy_sets)
+                w_total += rule_w
+                cur_w_list.append(float(rule_w))
+
+            if w_total == 0:
+                w_total = 1
+
+            for w in cur_w_list:
+                cur_firing_normalized = w/w_total
+                if len(cur_row_expanded) == 0:
+                    cur_row_expanded = np.concatenate(((cur_x_row*cur_firing_normalized), np.array([cur_firing_normalized])), dtype=float)
+                else:
+                    cur_row_expanded = np.concatenate((cur_row_expanded, (cur_x_row*cur_firing_normalized), np.array([cur_firing_normalized])), dtype=float)
+            
+            consequent_train_data.append(cur_row_expanded)
+                
+        cur_Y = merged_data.iloc[:, 0].to_numpy()
+        cur_X = consequent_train_data
+        # Estimate the consequence parameters
+        linear_estimate = LinearRegression(fit_intercept=False, copy_X=True).fit(cur_X, cur_Y)
+        self.r2_scores = linear_estimate.score(cur_X, cur_Y)
+        # Extract the parameters
+        self.extracted_params = linear_estimate.coef_
+        # The next lines partition the parameters into the rules. Each rule has parameters and one intercept which is the last parameter (1 + the last index of the rule)
+        rule_params = [[] for i in range(len(clusters.keys()))]
+        rule_intercepts = np.empty(len(clusters.keys()), dtype=float)
+        param_counter = 0
+        for rule_num, rule in clusters.items():
+            # For each rule iterate over all features in rule variable
+            for param_nr in range(len(rule)):
+                rule_params[rule_num].append(self.extracted_params[param_counter + param_nr])
+
+            rule_intercepts[rule_num] = self.extracted_params[param_counter + len(rule)]
+            param_counter += len(rule) + 1
+
+        self.n_fuzzy_rules = len(clusters.keys())
+        new_rulebase = TSKRuleBase(self.feature_names, expressions)
+        # Create rulebase
+        for rule_num, rule in clusters.items():
+            # Creating a matrix containing the mapping between antecedent place and the fuzzy set index
+            cur_index_matrix = np.array([np.arange(len(rule)), rule]).transpose()
+            # Defining the rule
+            new_rulebase.appendRule(TSKRule(cur_index_matrix, 
+                                    rule_params[rule_num], 
+                                    rule_intercepts[rule_num])
+                                    )
+        # Add the rulebase 
+        self.set_rulebase(new_rulebase)
+
 
     def test_model(self, test_data):
         # Calculate the output values
