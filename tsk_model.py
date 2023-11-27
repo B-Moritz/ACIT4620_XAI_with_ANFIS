@@ -10,13 +10,18 @@ import pdb
 
 
 class MfTrap():
+    """The membership function used to define a trapezoidal fuzzy set.
+    """
 
     def __init__(self, a, b, c, d, name):
+        # The four parameters used to define the function
         self.a = a
         self.b = b
         self.c = c
         self.d = d
+        # The name of the set (linguistic expression) is defined as an attribute to the object
         self.name = name
+        # The set is validated. Note how the following must be satisfied a < b <= c < d
         self.validate_set()
 
     def validate_set(self):
@@ -29,24 +34,51 @@ class MfTrap():
             raise Exception("Parameter c is larger than d.")
         
     def get_membership_degree(self, x):
+        """This method produces the membership degree of the value x to the current defined trapezoidal set (a,b,c,d)
+
+        Parameters
+        ----------
+        x : float
+
+        Returns
+        -------
+        float in the universeral interval [0,1]
+            The membership degree of the input value.
+        """
+        # Check for cases where the set represents x values for infinity
         if self.a == -np.infty and x < self.c:
+            # If a is negative infinity and x less than c, the memberhsip degree must be 1
             return 1
-        if self.c == np.infty and x > self.b:
+        if self.d == np.infty and x > self.b:
+            # If d is infinity and x greater than b, the memberhsip degree must be 1
             return 1
 
+        # The following if test determines where in what section the x value is for the fuzzy set ¨
+        # and reutns the corresponding memberhsip functions
         if x < self.a:
+            # If x is less than the first parameter, no membership is acounted for the value
             return 0
         elif x < self.b:
+            # If the memberhsip degree is greater than or equal to a and less than b, 
+            # the x value is in the line with positive slope
             if self.b - self.a == 0:
+                # If b and a are equal, the memberhsip degree must be 0. 
+                # There is no fuzziness between a and b.
                 return 0
             return (x-self.a)/(self.b-self.a)
         elif x < self.c:
+            # If x is less than c and greater than or equal to b, 
+            # the membership degree is in the core of the set (highest possible memberhsip degree).
             return 1
         elif x <= self.d:
+            # If x is less than or equal to d, the memberhsip degree 
+            # is defined by the line with negative slope
             if self.d - self.c == 0:
+                # If d and c are equal, the memberhsip degree is 0 (no fuzziness)
                 return 1
             return (self.d - x)/(self.d - self.c)
         else:
+            # For any vlaue greater than d, the degree is 0
             return 0
         
     def get_param_list(self):
@@ -84,6 +116,7 @@ class TKSConsequence():
         self.const = const # this coresponds to r
     
     def calculate_consequence(self, x_list, feature_indexes):
+        # This method is used to calculate the function value of the TSK consequent
         cur_sum = self.const
         for counter, x_ind in enumerate(feature_indexes):
             cur_sum += x_list[x_ind]*self.params_list[counter]
@@ -91,13 +124,19 @@ class TKSConsequence():
         return cur_sum
 
 class TSKAntecedent():
+    """This class represents the antecedent part of a TSK rule and can calculate the firing strength for the rule.
+       The t-norm used is product.
+    """
     def __init__(self, fuzzy_sets_indexes : []):
         self.fuzzy_sets_indexes : [] = fuzzy_sets_indexes
         self.w = None
         
     def calculate_firing_strenght(self, x_list:[], fuzzy_sets:[FeatureFuzzySets]):
+        # This method calculates the firing strenght of the antecedents
+        # Start by setting the firing strenght to the identity value for the product operator
         w = 1
         for feature_number, set_number in self.fuzzy_sets_indexes:
+            # For each set in the antecedent, calculate the membership degree and find the product of degree and the firing strength calculated up until now.
             w = w * fuzzy_sets[feature_number][set_number].get_membership_degree(x_list[feature_number])
         
         self.w = w
@@ -107,9 +146,14 @@ class TSKAntecedent():
         return self.w
 
 class TSKRule():
+    """A class used to defining a TSK rule.
+    """
     def __init__(self, fuzzy_sets_indexes, params : [float], const : float):
+        # The antecedent of the rule
         self.antecedent = TSKAntecedent(fuzzy_sets_indexes)
+        # The consequent of the rule
         self.consequent = TKSConsequence(params, const)
+        # The indexes of the sets making up the antecedents
         self.feature_indexes = fuzzy_sets_indexes
         
     def calculate_consequence_func(self, x_list):
@@ -131,8 +175,12 @@ class TSKRule():
         return f"IF {antecedent_str} THEN {consequent_str} + {self.consequent.const:.4f}"
     
 class TSKRuleBase():
+    """This class represents a TSK rule base. It has the responsibility to add and remove rules.
+        It also has the responsibility to print out the rules.
+    """
     def __init__(self, feature_names : [str], expressions : {str:str}):
         self.rules : [TSKRule] = []
+        # Storing feature names and creating expressions for printout.
         self.feature_names = feature_names
         self.expressions = []
         for i, feature in enumerate(self.feature_names):
@@ -151,7 +199,7 @@ class TSKRuleBase():
         for rule in self.rules:
             print(rule.to_string(fuzzy_sets, self.expressions))
         
-    def write_to_csv(self):
+    def write_to_csv(self, fileName="Last_rulebase.csv"):
         """This method writes the rule base to csv
         """
         rows = []
@@ -161,7 +209,7 @@ class TSKRuleBase():
             rows.append([np.concatenate(rule.feature_indexes[:,1], rule.consequent.params_list, [rule.consequent.const])])
 
         self.rulebase_df = pd.DataFrame(rows, columns=columns)
-        self.rulebase_df.to_csv()
+        self.rulebase_df.to_csv(fileName)
 
 
 class TSKModel():
@@ -206,19 +254,19 @@ class TSKModel():
                 if set_num == 0:
                     # Make sure the first set is defined to -infinity
                     cur_params = np.sort(np.random.uniform(boundaries[0] + portion_size*(set_num - overlap_const), boundaries[0] + portion_size*(set_num + 1 + overlap_const), size=2))
-                    cur_feature_sets.append(MfTrap(-np.infty,-np.infty,cur_params[0],cur_params[1], f"{self.feature_names[feature_number]}{set_num}", ""))
+                    cur_feature_sets.append(MfTrap(-np.infty,-np.infty,cur_params[0],cur_params[1], f"{self.feature_names[feature_number]}{set_num}"))
                 elif set_num == (self.n_fuzzy_sets-1):
                     cur_params = np.sort(np.random.uniform(boundaries[0] + portion_size*(set_num - overlap_const), boundaries[0] + portion_size*(set_num + 1 + overlap_const), size=2))
-                    cur_feature_sets.append(MfTrap(cur_params[0],cur_params[1], np.infty, np.infty, f"{self.feature_names[feature_number]}{set_num}", ""))
+                    cur_feature_sets.append(MfTrap(cur_params[0],cur_params[1], np.infty, np.infty, f"{self.feature_names[feature_number]}{set_num}"))
                 else:
                     cur_params = np.sort(np.random.uniform(boundaries[0] + portion_size*(set_num - overlap_const), boundaries[0] + portion_size*(set_num + 1 + overlap_const), size=4))
-                    cur_feature_sets.append(MfTrap(cur_params[0],cur_params[1],cur_params[2],cur_params[3], f"{self.feature_names[feature_number]}{set_num}", ""))
+                    cur_feature_sets.append(MfTrap(cur_params[0],cur_params[1],cur_params[2],cur_params[3], f"{self.feature_names[feature_number]}{set_num}"))
 
             # Add the sets to the input feature
             self._feature_fuzzy_sets.append(FeatureFuzzySets(cur_feature_sets, self.feature_names[feature_number]))
 
         feature_list = np.array(list(self.feature_boundaries.keys()))
-        self.rulebase : TSKRuleBase = TSKRuleBase(self.feature_names)
+        self.rulebase : TSKRuleBase = TSKRuleBase(self.feature_names, expressions={})
         for rule_n in range(self.n_fuzzy_rules):
             # For each rule created 
 
@@ -601,7 +649,6 @@ class TSKModel():
 
     def test_model(self, test_data):
         # Calculate the output values
-        self.test_data = test_data
         cur_actuals = np.empty(test_data.shape[0])
         for i, x_vals in test_data.iloc[:, 1:].iterrows():
             cur_actuals[i] = self.calculate_output(x_vals.to_numpy())
@@ -612,11 +659,13 @@ class TSKModel():
         # This method calculates the r-squared: 1 - RSS/TSS
         self.r_squared = 0
         if len(self.test_actuals) == 0 and len(test_data) > 0:
-            # If the actuals have not been calculated, apply the 
+            # If the actuals have not been calculated, apply the
+            self.test_data = test_data
             self.test_model(test_data)
         elif len(self.test_actuals) == 0:
             raise Exception("No test data is available, please provide test data!")
 
+        self.test_model(self.test_data)
         # Total sum of squares (denominator)
         y = self.test_data.iloc[:, 0].to_numpy()
         y_mean = np.mean(self.test_actuals)
@@ -631,10 +680,12 @@ class TSKModel():
         self.rmse = 0
         if len(self.test_actuals) == 0 and len(test_data) > 0:
             # If the actuals have not been calculated, apply the 
+            self.test_data = test_data
             self.test_model(test_data)
         elif len(self.test_actuals) == 0:
             raise Exception("No test data is available, please provide test data!")
 
+        self.test_model(self.test_data)
         # Total sum of squares (denominator)
         y = self.test_data.iloc[:, 0].to_numpy()
         
@@ -689,7 +740,7 @@ if __name__ == '__main__':
     test_dict = {0 : (0, 6), 1 : (0, 6)}
     test_names = ["A", "B"]
     test_tsk_model = TSKModel()
-    test_tsk_model.randomize_model(4, 4*4, test_dict, test_names, max_expressions=2)
+    #test_tsk_model.randomize_model(4, 4*4, test_dict, test_names, max_expressions=2)
 
     cur_feature_sets_A = []
     cur_feature_sets_A.append(MfTrap(-np.infty, -np.infty, 0, 1, f"Very small"))
@@ -706,9 +757,9 @@ if __name__ == '__main__':
     feature_fuzzy_sets = {0 : FeatureFuzzySets(cur_feature_sets_A, "A"), 1 : FeatureFuzzySets(cur_feature_sets_B, "B")}
     test_tsk_model.set_feature_fuzzy_sets(feature_fuzzy_sets)
 
-    new_rulebase = TSKRuleBase(test_names)
+    new_rulebase = TSKRuleBase(test_names, {"A" : "test1", "B" : "test2"})
     possible_params = [[1,1],[0,0], [1,1], [0,0]]
-    possible_r = [0,2,-2,8]
+    possible_r = [0,2,-1,9]
     for i in range(4):
         for j in range(4):
             cur_params = possible_params[max(i, j)]

@@ -7,7 +7,7 @@ from sklearn.linear_model import LinearRegression
 import copy
 import math
 
-from anfis_ba import TSKModel
+from tsk_model import TSKModel
 
 
 # Representation? - 2 fold - one array for the sets, one for the consequence parameters
