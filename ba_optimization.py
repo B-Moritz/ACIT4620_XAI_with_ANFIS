@@ -37,7 +37,7 @@ class BeesFitTSK():
         self.activate_debuging = activate_debuging
 
         # Calculate the mutation increment for each feature
-        self.mutation_increments = ((self.train_data.iloc[:,1:].max() - self.train_data.iloc[:,1:].min()) / 10).to_dict()
+        self.mutation_increments = ((self.train_data.iloc[:,1:].max() - self.train_data.iloc[:,1:].min()) / 100).to_dict()
         # Initialize the population
         self.bee_population = np.empty(n_scout_bees,dtype=object)
         
@@ -99,6 +99,7 @@ class BeesFitTSK():
         return self.all_time_best_model.rmse
 
     def update_set_param(self, old_param_val, increment, previous_parameter, next_parameter):
+        # This method updates the set parameter
         new_param_value = old_param_val + np.random.normal(loc=0, scale=1)*increment
         if new_param_value < previous_parameter:
             return previous_parameter
@@ -107,7 +108,8 @@ class BeesFitTSK():
         else:
             return new_param_value
 
-    def update_consequent_param(self, old_param, shrinking_factor):
+    def update_consequence_param(self, old_param, shrinking_factor):
+        # This method updates the coeficient in the consequence
         return old_param + np.random.normal(0, 1)*old_param*shrinking_factor
 
     def site_exploitation(self, site : TSKModel, n_followers, n_changes:int):
@@ -128,10 +130,10 @@ class BeesFitTSK():
                     
                     if selected_param == len(cur_copy.rulebase.rules[selected_rules].consequent.params_list):
                         old_param = cur_copy.rulebase.rules[selected_rules].consequent.const
-                        cur_copy.rulebase.rules[selected_rules].consequent.const = self.update_consequent_param(old_param, shrinking_factor)
+                        cur_copy.rulebase.rules[selected_rules].consequent.const = self.update_consequence_param(old_param, shrinking_factor)
                     else:
                         old_param = cur_copy.rulebase.rules[selected_rules].consequent.params_list[selected_param]
-                        cur_copy.rulebase.rules[selected_rules].consequent.params_list[selected_param] = self.update_consequent_param(old_param, shrinking_factor)
+                        cur_copy.rulebase.rules[selected_rules].consequent.params_list[selected_param] = self.update_consequence_param(old_param, shrinking_factor)
                 else:
                     set_to_modify = np.random.randint(set_param_size)
                     subset_to_modify = np.random.randint(len(cur_copy._feature_fuzzy_sets[set_to_modify].fuzzy_sets))

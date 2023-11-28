@@ -583,54 +583,42 @@ class TSKModel():
         self.set_feature_fuzzy_sets(mfs)
 
         
-        consequent_train_data = []
-        
+        self.r2_scores = []
+        self.extracted_params = []
+        rule_params = [[] for i in range(len(clusters.keys()))]
+        rule_intercepts = np.empty(len(clusters.keys()), dtype=float)
         antecedents = []
+        cur_y = merged_data.iloc[:, 0].to_numpy().ravel()
         for rule_num, rule in clusters.items():
             cur_index_matrix = np.array([np.arange(len(rule)), rule]).transpose()
             antecedents.append(TSKAntecedent(cur_index_matrix))
         # Create the dataset to fit the consequents with least squeare method
-        for row in range(merged_data.shape[0]):
-            cur_x_row = merged_data.iloc[row, 1:-1].to_numpy()
-            cur_row_expanded = np.array([])
-            w_total = 0
-            cur_w_list = []
-            # Find firing strength for each rule
-            for rule in antecedents:
-                rule_w = rule.calculate_firing_strenght(cur_x_row, self._feature_fuzzy_sets)
-                w_total += rule_w
-                cur_w_list.append(float(rule_w))
+        for w_rule in range(len(antecedents)):
+            # For each rule, calculate the updated dataset
+            consequent_train_data = []
+            reduced_y = []
+            for row in range(merged_data.shape[0]):
+                cur_x_row = merged_data.iloc[row, 1:-1].to_numpy()
+                w_total = 0
+                cur_w_list = []
+                # Find firing strength for each rule
+                for rule in antecedents:
+                    rule_w = rule.calculate_firing_strenght(cur_x_row, self._feature_fuzzy_sets)
+                    w_total += rule_w
+                    cur_w_list.append(float(rule_w))
 
-            if w_total == 0:
-                w_total = 1
+                if w_total > 0 and cur_w_list[w_rule] > 0:
+                    cur_firing_normalized = cur_w_list[w_rule]/w_total
+                    consequent_train_data.append(np.concatenate((cur_x_row*cur_firing_normalized, np.array([cur_firing_normalized]))))
+                    reduced_y.append(cur_y[row])
+        
+            cur_linear_estimate = LinearRegression(fit_intercept=False, copy_X=True).fit(consequent_train_data, np.array(reduced_y).reshape(-1, 1))    
+            self.r2_scores.append(cur_linear_estimate.score(consequent_train_data, np.array(reduced_y).reshape(-1, 1)))
+            cur_parameters = cur_linear_estimate.coef_.ravel()
+            self.extracted_params.append(cur_parameters)
+            rule_params[w_rule] = cur_parameters[:-1]
+            rule_intercepts[w_rule] = cur_parameters[-1]
 
-            for w in cur_w_list:
-                cur_firing_normalized = w/w_total
-                if len(cur_row_expanded) == 0:
-                    cur_row_expanded = np.concatenate(((cur_x_row*cur_firing_normalized), np.array([cur_firing_normalized])), dtype=float)
-                else:
-                    cur_row_expanded = np.concatenate((cur_row_expanded, (cur_x_row*cur_firing_normalized), np.array([cur_firing_normalized])), dtype=float)
-            
-            consequent_train_data.append(cur_row_expanded)
-                
-        cur_Y = merged_data.iloc[:, 0].to_numpy()
-        cur_X = consequent_train_data
-        # Estimate the consequence parameters
-        linear_estimate = LinearRegression(fit_intercept=False, copy_X=True).fit(cur_X, cur_Y)
-        self.r2_scores = linear_estimate.score(cur_X, cur_Y)
-        # Extract the parameters
-        self.extracted_params = linear_estimate.coef_
-        # The next lines partition the parameters into the rules. Each rule has parameters and one intercept which is the last parameter (1 + the last index of the rule)
-        rule_params = [[] for i in range(len(clusters.keys()))]
-        rule_intercepts = np.empty(len(clusters.keys()), dtype=float)
-        param_counter = 0
-        for rule_num, rule in clusters.items():
-            # For each rule iterate over all features in rule variable
-            for param_nr in range(len(rule)):
-                rule_params[rule_num].append(self.extracted_params[param_counter + param_nr])
-
-            rule_intercepts[rule_num] = self.extracted_params[param_counter + len(rule)]
-            param_counter += len(rule) + 1
 
         self.n_fuzzy_rules = len(clusters.keys())
         new_rulebase = TSKRuleBase(self.feature_names, expressions)
@@ -689,7 +677,7 @@ class TSKModel():
         # Total sum of squares (denominator)
         y = self.test_data.iloc[:, 0].to_numpy()
         
-        rmse = np.sqrt(np.sum((y - self.test_actuals)**2))
+        rmse = np.sqrt(np.sum((y - self.test_actuals)**2)/len(y))
 
         self.rmse = rmse
         return self.rmse
