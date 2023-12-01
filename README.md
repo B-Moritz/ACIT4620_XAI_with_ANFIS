@@ -31,4 +31,6 @@ To keep track of dependencies an environment management system was used: venv. P
 
 To make the environment available in jupyter, a ipykernel needs to be installed: python -m ipykernel install --name=test_env
 
-
+### Running CI_RF_mm in jupyter
+The code can be run as is simply hitting shift+enter will run the selected cell and select the next, repeat until there are no more code segments. 
+any cells with only df or df.info() can be rerun without causing any error since it is only used to display current df.
