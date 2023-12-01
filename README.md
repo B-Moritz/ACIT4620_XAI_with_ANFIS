@@ -1,6 +1,6 @@
 # Instructions for how to navigate this repository
 
-This project is the exam assignment for the ACIT4100 class at OsloMet. 
+This project is the exam assignment for the ACIT4620 class at OsloMet. 
 The repository contains the code of a TSK estimation implementation. The following files are important:
 
 - The file used to produce the training and test is the preliminary_analysis.ipynb. It is important that this notebook is executed whenever the other parts of the project are tested.
