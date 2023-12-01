@@ -9,6 +9,7 @@ The repository contains the code of a TSK estimation implementation. The followi
 - The Bees Algorithm implemented for fine tuning the TSK model can be found in the file ba_optimizatino.py. This file can be executed to test the optimization. The output will be the evolving rmse values.
 - The evaluation of the tsk models were done in the file evaluation.ipynb. By running this notebook the table and plot of the evaluation can be produced.
 - Testing of the Bees algorithm can be found in test_bees_optimization.ipynb.
+- The Matlab ANFIS implementation can be found in Anfis_matlab_1.mlx
 
 The dataset used in this project is available here:
 - https://doi.org/10.6084/m9.figshare.12155553
