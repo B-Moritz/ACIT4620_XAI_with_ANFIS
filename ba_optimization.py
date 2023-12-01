@@ -35,25 +35,42 @@ class BeesFitTSK():
         self.train_data = training_data
         self.test_data = test_data
         self.activate_debuging = activate_debuging
-
+        self.gen_counter = 0
+        self.training_log = [[],[],[]] # gen_number, training_rmse, test_rmse
         # Calculate the mutation increment for each feature
         self.mutation_increments = ((self.train_data.iloc[:,1:].max() - self.train_data.iloc[:,1:].min()) / 100).to_dict()
         # Initialize the population
         self.bee_population = np.empty(n_scout_bees,dtype=object)
         
-    def initialize_population(self, n_rules=20, n_fuzzy_sets=15, trap_quantile=0.5, expressions={}):
+    def initialize_population(self, n_rules=20, n_fuzzy_sets=15, trap_quantile=0.5, expressions={}, random_init=False):
+        """Initialization of the population is done acording to the input parameters.
+
+        Parameters
+        ----------
+        n_rules : int, optional
+            The number of rules for TSK model, by default 20
+        n_fuzzy_sets : int, optional
+            Number of fuzzy sets in the TSK model, by default 15
+        trap_quantile : float, optional
+            The quantile that indicate the boundaries of the core for each fuzzy set, by default 0.5
+        expressions : dict, optional
+            The expression that is used to describe the input variables, by default {}
+        random_init : bool, optional
+            Flag for activating random initialization (quantile and number of sets are randomized), by default False
+        """
         self.n_rules = n_rules
         self.n_fuzzy_sets = n_fuzzy_sets
         self.expressions = expressions
         self.trap_quantile = trap_quantile
+        self.random_init = random_init
         for i in range(len(self.bee_population)):
             # For each solution in population, initialize model with kmeans
             cur_tsk_model = TSKModel()
             cur_tsk_model.create_rulebase_kmeans(self.train_data, 
                                                  #n_rules=n_rules, 
-                                                 n_fuzzy_sets=n_fuzzy_sets, 
-                                                 expressions=expressions, 
-                                                 trap_quantile=self.trap_quantile)
+                                                 n_fuzzy_sets= self.n_fuzzy_sets if not self.random_init else np.random.choice(np.arange(1, self.n_fuzzy_sets)), 
+                                                 expressions=self.expressions, 
+                                                 trap_quantile=np.random.uniform(0.1, 0.7))
             
             self.bee_population[i] = cur_tsk_model
             # Evaluate fitness
@@ -83,10 +100,9 @@ class BeesFitTSK():
             if self.activate_debuging: print(f"Work on model {self.n_best_sites + i} (abandoned)")
             cur_tsk_model = TSKModel()
             cur_tsk_model.create_rulebase_kmeans(self.train_data, 
-                                                 #n_rules=self.n_rules, 
-                                                 n_fuzzy_sets=self.n_fuzzy_sets, 
+                                                 n_fuzzy_sets=self.n_fuzzy_sets if not self.random_init else np.random.choice(np.arange(1, self.n_fuzzy_sets)), 
                                                  expressions=self.expressions, 
-                                                 trap_quantile=self.trap_quantile)
+                                                 trap_quantile=np.random.uniform(0.1, 0.7))
             cur_tsk_model.calculate_rmse(self.train_data)
             self.bee_population[self.n_best_sites + i] = cur_tsk_model
 
@@ -94,8 +110,12 @@ class BeesFitTSK():
         # Check if there is a new best site
         if self.all_time_best_model.rmse > self.bee_population[0].rmse:
             self.all_time_best_model = copy.deepcopy(self.bee_population[0])
-
-        print(f"Current best fitness: {self.all_time_best_model.rmse:.2f}")
+            print(f"Current best fitness: {self.all_time_best_model.rmse} generation {self.gen_counter}")
+        
+        self.gen_counter += 1
+        self.training_log[0].append(self.gen_counter)
+        self.training_log[1].append(self.all_time_best_model.rmse)
+        self.training_log[2].append(self.all_time_best_model.calculate_rmse(self.test_data))
         return self.all_time_best_model.rmse
 
     def update_set_param(self, old_param_val, increment, previous_parameter, next_parameter):
@@ -125,7 +145,7 @@ class BeesFitTSK():
                 # Iterate over the number of changes that should be made to the site
                 if np.random.randint(2):
                     # Change consequent of anticedent
-                    selected_rules = np.random.randint(len(site.rulebase.feature_names))
+                    selected_rules = np.random.randint(len(site.rulebase.rules))
                     selected_param = np.random.randint(len(cur_copy.rulebase.rules[selected_rules].consequent.params_list)+1)
                     
                     if selected_param == len(cur_copy.rulebase.rules[selected_rules].consequent.params_list):
@@ -167,7 +187,7 @@ class BeesFitTSK():
             # Calculate fitness of the worker
             cur_fitness = cur_copy.calculate_rmse(self.train_data)
             if cur_fitness < self.all_time_best_model.rmse and self.activate_debuging:
-                if self.activate_debuging: print("Found fitness " + str(cur_fitness) + "While site rmse is " + str(site.rmse))
+                if self.activate_debuging: print("Found fitness " + str(cur_fitness) + " while site rmse is " + str(site.rmse))
             if cur_fitness < site.rmse:
                 cur_best = cur_copy
                 improvement_falg = True
@@ -181,11 +201,11 @@ class BeesFitTSK():
             cur_tsk_model = TSKModel()
             cur_tsk_model.create_rulebase_kmeans(self.train_data, 
                                                  #n_rules=self.n_rules, 
-                                                 n_fuzzy_sets=self.n_fuzzy_sets, 
+                                                 n_fuzzy_sets=self.n_fuzzy_sets if not self.random_init else np.random.choice(np.arange(1, self.n_fuzzy_sets)), 
                                                  expressions=self.expressions, 
-                                                 trap_quantile=self.trap_quantile)
+                                                 trap_quantile=np.random.uniform(0.1, 0.7))
             
-            cur_tsk_model.calculate_rmse(self.test_data)
+            cur_tsk_model.calculate_rmse(self.train_data)
             return cur_tsk_model
         
         return cur_best

@@ -5,28 +5,63 @@ FS = FuzzySystem(show_banner=False)
 RULE1 = "IF (yield_of_CT IS cluster1) AND (Tmax IS cluster1) AND (Tmin IS cluster1) THEN (OUTPUT IS fun1)"
 RULE2 = "IF (yield_of_CT IS cluster2) AND (Tmax IS cluster2) AND (Tmin IS cluster2) THEN (OUTPUT IS fun2)"
 RULE3 = "IF (yield_of_CT IS cluster3) AND (Tmax IS cluster3) AND (Tmin IS cluster3) THEN (OUTPUT IS fun3)"
-FS.add_rules([RULE1, RULE2, RULE3])
+RULE4 = "IF (yield_of_CT IS cluster4) AND (Tmax IS cluster4) AND (Tmin IS cluster4) THEN (OUTPUT IS fun4)"
+RULE5 = "IF (yield_of_CT IS cluster5) AND (Tmax IS cluster5) AND (Tmin IS cluster5) THEN (OUTPUT IS fun5)"
+RULE6 = "IF (yield_of_CT IS cluster6) AND (Tmax IS cluster6) AND (Tmin IS cluster6) THEN (OUTPUT IS fun6)"
+RULE7 = "IF (yield_of_CT IS cluster7) AND (Tmax IS cluster7) AND (Tmin IS cluster7) THEN (OUTPUT IS fun7)"
+RULE8 = "IF (yield_of_CT IS cluster8) AND (Tmax IS cluster8) AND (Tmin IS cluster8) THEN (OUTPUT IS fun8)"
+RULE9 = "IF (yield_of_CT IS cluster9) AND (Tmax IS cluster9) AND (Tmin IS cluster9) THEN (OUTPUT IS fun9)"
+RULE10 = "IF (yield_of_CT IS cluster10) AND (Tmax IS cluster10) AND (Tmin IS cluster10) THEN (OUTPUT IS fun10)"
+FS.add_rules([RULE1, RULE2, RULE3, RULE4, RULE5, RULE6, RULE7, RULE8, RULE9, RULE10])
 
-FS.set_output_function('fun1', '-7.240398e-06*yield_of_CT+5.054476e-03*Tmax+1.865404e-03*Tmin+-1.537795e-01')
-FS.set_output_function('fun2', '-4.045782e-06*yield_of_CT+5.620047e-03*Tmax+2.055391e-03*Tmin+-2.029618e-01')
-FS.set_output_function('fun3', '-8.085627e-06*yield_of_CT+9.724654e-03*Tmax+-1.170833e-03*Tmin+-2.610321e-01')
+FS.set_output_function('fun1', '-5.005225e-05*yield_of_CT+1.361255e-02*Tmax+-7.459560e-03*Tmin+-8.966422e-02')
+FS.set_output_function('fun2', '-1.802862e-05*yield_of_CT+-2.735687e-03*Tmax+7.835998e-03*Tmin+1.783953e-01')
+FS.set_output_function('fun3', '5.967997e-06*yield_of_CT+3.111313e-02*Tmax+-3.661718e-02*Tmin+-8.478428e-01')
+FS.set_output_function('fun4', '-3.048342e-05*yield_of_CT+9.323330e-03*Tmax+-1.026246e-02*Tmin+-2.483077e-02')
+FS.set_output_function('fun5', '6.769401e-05*yield_of_CT+3.152832e-02*Tmax+-2.022170e-02*Tmin+-8.654930e-01')
+FS.set_output_function('fun6', '-1.070270e-05*yield_of_CT+4.139804e-03*Tmax+2.566027e-03*Tmin+-7.347082e-02')
+FS.set_output_function('fun7', '-7.230146e-06*yield_of_CT+7.273973e-03*Tmax+-1.686964e-04*Tmin+-2.283706e-01')
+FS.set_output_function('fun8', '1.056042e-06*yield_of_CT+1.257788e-02*Tmax+4.388121e-04*Tmin+-4.290060e-01')
+FS.set_output_function('fun9', '-2.382284e-05*yield_of_CT+2.923805e-04*Tmax+6.217756e-03*Tmin+5.889412e-02')
+FS.set_output_function('fun10', '-8.369518e-06*yield_of_CT+-3.490574e-03*Tmax+9.369063e-03*Tmin+5.807157e-02')
 
-FS_1 = FuzzySet(function=Gaussian_MF(20886.376882, 8325.377053), term='cluster1')
-FS_2 = FuzzySet(function=Gaussian_MF(8952.209121, 2408.159281), term='cluster2')
-FS_3 = FuzzySet(function=Gaussian_MF(-22771.074362, 26748.837205), term='cluster3')
-MF_yield_of_CT = LinguisticVariable([FS_1, FS_2, FS_3], concept='yield_of_CT' , universe_of_discourse=(220.0, 38690.0))
+FS_1 = FuzzySet(function=Gaussian_MF(5024.859089, 649.488214), term='cluster1')
+FS_2 = FuzzySet(function=Gaussian_MF(14858.515010, 1501.651297), term='cluster2')
+FS_3 = FuzzySet(function=Gaussian_MF(35674.153601, 5699.809292), term='cluster3')
+FS_4 = FuzzySet(function=Gaussian_MF(3292.145674, 687.346213), term='cluster4')
+FS_5 = FuzzySet(function=Gaussian_MF(1241.203986, 958.884121), term='cluster5')
+FS_6 = FuzzySet(function=Gaussian_MF(11964.402592, 832.951512), term='cluster6')
+FS_7 = FuzzySet(function=Gaussian_MF(8385.597794, 601.975679), term='cluster7')
+FS_8 = FuzzySet(function=Gaussian_MF(9984.677626, 659.273736), term='cluster8')
+FS_9 = FuzzySet(function=Gaussian_MF(6736.859472, 638.763371), term='cluster9')
+FS_10 = FuzzySet(function=Gaussian_MF(21915.252663, 3440.844851), term='cluster10')
+MF_yield_of_CT = LinguisticVariable([FS_1, FS_2, FS_3, FS_4, FS_5, FS_6, FS_7, FS_8, FS_9, FS_10], concept='yield_of_CT' , universe_of_discourse=(220.0, 38690.0))
 FS.add_linguistic_variable('yield_of_CT', MF_yield_of_CT)
 
-FS_4 = FuzzySet(function=Gaussian_MF(28.354451, 74.781076), term='cluster1')
-FS_5 = FuzzySet(function=Gaussian_MF(29.965735, 84.335433), term='cluster2')
-FS_6 = FuzzySet(function=Gaussian_MF(33.673378, 15.323095), term='cluster3')
-MF_Tmax = LinguisticVariable([FS_4, FS_5, FS_6], concept='Tmax' , universe_of_discourse=(18.50414, 41.91501))
+FS_11 = FuzzySet(function=Gaussian_MF(33.998322, 12.503982), term='cluster1')
+FS_12 = FuzzySet(function=Gaussian_MF(26.559956, 35.198382), term='cluster2')
+FS_13 = FuzzySet(function=Gaussian_MF(31.450610, 2.690278), term='cluster3')
+FS_14 = FuzzySet(function=Gaussian_MF(33.635204, 10.751403), term='cluster4')
+FS_15 = FuzzySet(function=Gaussian_MF(32.769885, 8.207612), term='cluster5')
+FS_16 = FuzzySet(function=Gaussian_MF(31.450431, 20.017750), term='cluster6')
+FS_17 = FuzzySet(function=Gaussian_MF(29.510594, 39.971562), term='cluster7')
+FS_18 = FuzzySet(function=Gaussian_MF(31.483257, 17.778259), term='cluster8')
+FS_19 = FuzzySet(function=Gaussian_MF(30.648398, 11.080056), term='cluster9')
+FS_20 = FuzzySet(function=Gaussian_MF(28.389496, 5.334538), term='cluster10')
+MF_Tmax = LinguisticVariable([FS_11, FS_12, FS_13, FS_14, FS_15, FS_16, FS_17, FS_18, FS_19, FS_20], concept='Tmax' , universe_of_discourse=(18.50414, 41.91501))
 FS.add_linguistic_variable('Tmax', MF_Tmax)
 
-FS_7 = FuzzySet(function=Gaussian_MF(9.110019, 16.639423), term='cluster1')
-FS_8 = FuzzySet(function=Gaussian_MF(12.364940, 67.718665), term='cluster2')
-FS_9 = FuzzySet(function=Gaussian_MF(6.875904, 42.123465), term='cluster3')
-MF_Tmin = LinguisticVariable([FS_7, FS_8, FS_9], concept='Tmin' , universe_of_discourse=(-9.69776, 27.14498))
+FS_21 = FuzzySet(function=Gaussian_MF(7.610081, 37.214196), term='cluster1')
+FS_22 = FuzzySet(function=Gaussian_MF(8.401644, 9.474565), term='cluster2')
+FS_23 = FuzzySet(function=Gaussian_MF(13.896850, 2.094687), term='cluster3')
+FS_24 = FuzzySet(function=Gaussian_MF(9.952677, 12.528891), term='cluster4')
+FS_25 = FuzzySet(function=Gaussian_MF(12.075145, 10.714842), term='cluster5')
+FS_26 = FuzzySet(function=Gaussian_MF(6.807413, 13.885588), term='cluster6')
+FS_27 = FuzzySet(function=Gaussian_MF(7.769815, 22.550722), term='cluster7')
+FS_28 = FuzzySet(function=Gaussian_MF(12.075101, 266.265341), term='cluster8')
+FS_29 = FuzzySet(function=Gaussian_MF(10.262039, 24.344043), term='cluster9')
+FS_30 = FuzzySet(function=Gaussian_MF(7.535681, 3.991563), term='cluster10')
+MF_Tmin = LinguisticVariable([FS_21, FS_22, FS_23, FS_24, FS_25, FS_26, FS_27, FS_28, FS_29, FS_30], concept='Tmin' , universe_of_discourse=(-9.69776, 27.14498))
 FS.add_linguistic_variable('Tmin', MF_Tmin)
 
 

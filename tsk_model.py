@@ -571,10 +571,10 @@ class TSKModel():
                 cur_min = merged_data[merged_data["Subcluster_number"].isin(np.unique(subclusters))].iloc[:, k].min()
                 cur_max = merged_data[merged_data["Subcluster_number"].isin(np.unique(subclusters))].iloc[:, k].max()
                 cur_center = raw_mfs[cluster]
-                cur_mfs.append(MfTrap(cur_center - (abs(cur_mean - cur_min)),
+                cur_mfs.append(MfTrap(cur_center - (abs(cur_center - cur_min)),
                                       cur_center - dis_from_center,
                                       cur_center + dis_from_center,
-                                      cur_center + (abs(cur_mean - cur_max)),
+                                      cur_center + (abs(cur_center - cur_max)),
                                       f"{merged_data.columns[k]}_{cluster}"))
 
             # Add the feature collection of sets
@@ -636,6 +636,7 @@ class TSKModel():
 
 
     def test_model(self, test_data):
+        self.test_data = test_data
         # Calculate the output values
         cur_actuals = np.empty(test_data.shape[0])
         for i, x_vals in test_data.iloc[:, 1:].iterrows():
@@ -653,7 +654,7 @@ class TSKModel():
         elif len(self.test_actuals) == 0:
             raise Exception("No test data is available, please provide test data!")
 
-        self.test_model(self.test_data)
+        self.test_model(test_data)
         # Total sum of squares (denominator)
         y = self.test_data.iloc[:, 0].to_numpy()
         y_mean = np.mean(self.test_actuals)
@@ -673,7 +674,7 @@ class TSKModel():
         elif len(self.test_actuals) == 0:
             raise Exception("No test data is available, please provide test data!")
 
-        self.test_model(self.test_data)
+        self.test_model(test_data)
         # Total sum of squares (denominator)
         y = self.test_data.iloc[:, 0].to_numpy()
         
